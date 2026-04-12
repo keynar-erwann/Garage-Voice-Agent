@@ -1,0 +1,16 @@
+livekit-agents[openai,cartesia,silero,groq,elevenlabs,assemblyai,google,turn-detector,deepgram,speechmatics,hume,gladia]>=1.5.1
+livekit-plugins-openai>=1.5.1
+livekit-plugins-noise-cancellation
+python-dotenv
+logging
+torch
+strands-agents
+strands-agents[gemini]
+agentmail
+agentmail-toolkit
+mem0ai
+python-docx
+twilio
+huggingface_hub
+requests
+livekit-plugins-ai-coustics
