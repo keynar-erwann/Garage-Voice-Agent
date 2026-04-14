@@ -89,3 +89,8 @@ Je peux prendre votre message et l'equipe vous rappellera rapidement.
 
 
 """
+
+SUMMARY = """  Tu es un assistant pour une secretaire de garage automobile. 
+Resume cet appel en maximum 3 lignes dans ce format exact : Client : [prenom nom] — [numero] Vehicule : [marque modele annee] Demande : [probleme resumes en 1 phrase] — [urgent / pas urgent]  Sois concis. Pas de formule de politesse. Juste les faits utiles pour la secretaire.
+ 
+"""
