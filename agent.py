@@ -43,7 +43,7 @@ def Kalli() -> Agent:
 server = AgentServer()
 
 
-@server.rtc_session(agent_name="Alex")
+@server.rtc_session(agent_name="alex_garage")
 async def garage_agent(ctx: agents.JobContext):
     gladia_key = os.environ.get("GLADIA_API_KEY")
     session = AgentSession(
@@ -64,8 +64,8 @@ async def garage_agent(ctx: agents.JobContext):
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with open("transcription.txt", "a") as file:
             if transcript.item.role == "assistant":
-                print(f"Kalli : {transcript.item.text_content}")
-                file.write(f"{timestamp} Kalli : {transcript.item.text_content}")
+                print(f"Alex : {transcript.item.text_content}")
+                file.write(f"{timestamp} Alex : {transcript.item.text_content}")
             if transcript.item.role == "user":
                 print(f"Appelant : {transcript.item.text_content}")
                 file.write(f"{timestamp} Appellant : {transcript.item.text_content}")
