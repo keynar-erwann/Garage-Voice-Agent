@@ -84,13 +84,22 @@ EN :
 GREETINGS = """ 
 Bonjour ! Vous avez rejoint Garage Mobile Road Runner. 
 Nos techniciens sont presentement occupes. 
-Je suis Kalli, l'assistante virtuelle du garage. 
+Je suis Alex, l'assistante virtuelle du garage. 
 Je peux prendre votre message et l'equipe vous rappellera rapidement.
 
 
 """
 
-SUMMARY = """  Tu es un assistant pour une secretaire de garage automobile. 
-Resume cet appel en maximum 3 lignes dans ce format exact : Client : [prenom nom] — [numero] Vehicule : [marque modele annee] Demande : [probleme resumes en 1 phrase] — [urgent / pas urgent]  Sois concis. Pas de formule de politesse. Juste les faits utiles pour la secretaire.
- 
+SUMMARY = """Tu es un assistant pour une secrétaire de garage automobile. 
+Extrais les informations suivantes de l'appel et présente-les en JSON :
+
+- prenom: Prénom du client
+- nom: Nom de famille (si mentionné)
+- marque_modele_annee: Marque, modèle et année du véhicule
+- problème: Description du problème rencontré
+- urgence: Niveau d'urgence (urgent/pas urgent)
+- date_souhaitee_rdv: Date souhaitée pour le rendez-vous (si mentionnée)
+- numero_suivi: Numéro de suivi ou référence (si mentionné)
+
+Sois précis et exhaustif dans l'extraction des informations.
 """

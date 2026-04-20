@@ -14,3 +14,4 @@ twilio
 huggingface_hub
 requests
 livekit-plugins-ai-coustics
+google-genai
