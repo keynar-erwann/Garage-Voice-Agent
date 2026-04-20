@@ -112,7 +112,7 @@ async def garage_agent(ctx: agents.JobContext):
             if transcript.item.role == "assistant":
                 print(f"Alex : {transcript.item.text_content}")
                 file.write(f"{timestamp} Alex : {transcript.item.text_content}")
-            if transcript.item.role == "user":
+            elif transcript.item.role == "user":
                 print(f"Appelant : {transcript.item.text_content}")
                 file.write(f"{timestamp} Appellant : {transcript.item.text_content}")
 
