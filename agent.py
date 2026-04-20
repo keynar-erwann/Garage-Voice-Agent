@@ -7,7 +7,6 @@
 import os
 import datetime
 import logging
-
 from dotenv import load_dotenv
 from openai import OpenAI
 from openai.types.beta.realtime.session import TurnDetection
@@ -26,7 +25,6 @@ from livekit.agents import (
 )
 from livekit.plugins import openai, noise_cancellation, gladia, ai_coustics
 from livekit.plugins.openai import realtime
-
 from system_prompt import SYSTEM_PROMPT, GREETINGS, SUMMARY
 from google import genai
 from google.genai import types
@@ -35,7 +33,6 @@ from typing import Optional
 
 
 load_dotenv()
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("garage-agent")
 
@@ -54,7 +51,6 @@ def call_summary(transcription_file: str = "transcription.txt", phone_number: st
     client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
     with open(transcription_file, "r", encoding="utf-8") as file:
         data = file.read()
-
     response = client.models.generate_content(
         model="gemini-2.5-flash-lite",
         contents=f"{SUMMARY}\n\nTranscription:\n{data}",
@@ -64,9 +60,7 @@ def call_summary(transcription_file: str = "transcription.txt", phone_number: st
             response_schema=ClientInfo.model_json_schema()
         )
     )
-    
     client_info = ClientInfo.model_validate_json(response.text)
-   
     formatted_message = (
         f"Rapport de l'appel :\n\n"
         f"Résumé de la demande du client\n"
@@ -78,13 +72,11 @@ def call_summary(transcription_file: str = "transcription.txt", phone_number: st
         f"Date Souhaité RDV: {client_info.date_souhaitee_rdv or 'Non spécifiée'}\n"
         f"Numéro suivi: {client_info.numero_suivi or 'Non spécifié'}"
     )
-    
     return formatted_message
 
 
 def Alex() -> Agent:
     return Agent(instructions=SYSTEM_PROMPT)
-
 
 server = AgentServer()
 
@@ -107,6 +99,8 @@ async def garage_agent(ctx: agents.JobContext):
 
     @session.on("conversation_item_added")
     def transcription(transcript: ConversationItemAddedEvent):
+        if not isinstance(transcript.item, ChatMessage):
+            return
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with open("transcription.txt", "a") as file:
             if transcript.item.role == "assistant":
@@ -120,19 +114,15 @@ async def garage_agent(ctx: agents.JobContext):
     if caller.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP:
         phone_number = caller.attributes.get("sip.phoneNumber", "unknown")
         logger.info(f"{phone_number} is calling...")
-
     async def send_summary():
         logger.info("Appel terminé. Génération du résumé...")
         try:
             if os.path.exists("transcription.txt"):
                 summary_message = call_summary("transcription.txt", phone_number)
-                
                 account_sid = os.environ.get("ACCOUNT_SID")
                 auth_token = os.environ.get("AUTH_TOKEN")
-                
                 if account_sid and auth_token:
                     twilio_client = Client(account_sid, auth_token)
-                    
                     twilio_client.messages.create(
                         body=summary_message,
                         from_=os.environ.get("SENDER_PHONE_NUMBER"),
@@ -145,7 +135,6 @@ async def garage_agent(ctx: agents.JobContext):
                 logger.warning("Fichier transcription.txt non trouvé")
         except Exception as e:
             logger.error(f"Erreur lors de l'envoi du résumé: {e}")
-
     ctx.add_shutdown_callback(send_summary)
 
     await session.start(
@@ -165,7 +154,5 @@ async def garage_agent(ctx: agents.JobContext):
             "Enchaîne immédiatement en demandant son nom et son prénom pour commencer le diagnostic."
         )
     )
-
-
 if __name__ == "__main__":
     agents.cli.run_app(server)
