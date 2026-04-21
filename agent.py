@@ -69,7 +69,7 @@ def call_summary(transcription_file: str = "transcription.txt", phone_number: st
         f"Information Véhicule Global: {client_info.marque_modele_annee}\n"
         f"Problème: {client_info.problème}\n"
         f"Urgence: {client_info.urgence}\n"
-        f"Date Souhaité RDV: {client_info.date_souhaitee_rdv or 'Non spécifiée'}"
+        f"Date et Heure RDV: {client_info.date_souhaitee_rdv or 'Non spécifiées'}"
     )
     return formatted_message
 
