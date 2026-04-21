@@ -65,12 +65,11 @@ def call_summary(transcription_file: str = "transcription.txt", phone_number: st
         f"Rapport de l'appel :\n\n"
         f"Résumé de la demande du client\n"
         f"Nom: {client_info.prenom} {client_info.nom or ''}\n"
-        f"Prénom: {client_info.prenom}\n"
         f"Numéro téléphone: {phone_number}\n"
         f"Information Véhicule Global: {client_info.marque_modele_annee}\n"
         f"Problème: {client_info.problème}\n"
-        f"Date Souhaité RDV: {client_info.date_souhaitee_rdv or 'Non spécifiée'}\n"
-        f"Numéro suivi: {client_info.numero_suivi or 'Non spécifié'}"
+        f"Urgence: {client_info.urgence}\n"
+        f"Date Souhaité RDV: {client_info.date_souhaitee_rdv or 'Non spécifiée'}"
     )
     return formatted_message
 
@@ -84,6 +83,12 @@ server = AgentServer()
 @server.rtc_session(agent_name="alex_garage")
 async def garage_agent(ctx: agents.JobContext):
     gladia_key = os.environ.get("GLADIA_API_KEY")
+    phone_number = "unknown"
+    
+    
+    with open("transcription.txt", "w", encoding="utf-8") as f:
+        f.write("")
+
     session = AgentSession(
         stt=gladia.STT(api_key=gladia_key, languages=["fr", "en"]),
         llm=openai.realtime.RealtimeModel(
@@ -102,13 +107,18 @@ async def garage_agent(ctx: agents.JobContext):
         if not isinstance(transcript.item, ChatMessage):
             return
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with open("transcription.txt", "a") as file:
-            if transcript.item.role == "assistant":
-                print(f"Alex : {transcript.item.text_content}")
-                file.write(f"{timestamp} Alex : {transcript.item.text_content}")
-            elif transcript.item.role == "user":
-                print(f"Appelant : {transcript.item.text_content}")
-                file.write(f"{timestamp} Appellant : {transcript.item.text_content}")
+        try:
+            with open("transcription.txt", "a", encoding="utf-8") as file:
+                if transcript.item.role == "assistant":
+                    content = transcript.item.text_content or ""
+                    print(f"Alex : {content}")
+                    file.write(f"{timestamp} Alex : {content}\n")
+                elif transcript.item.role == "user":
+                    content = transcript.item.text_content or ""
+                    print(f"Appelant : {content}")
+                    file.write(f"{timestamp} Appellant : {content}\n")
+        except Exception as e:
+            logger.error(f"Failed to write to transcription.txt: {e}")
 
     caller = await ctx.wait_for_participant()
     if caller.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP:

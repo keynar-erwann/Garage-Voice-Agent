@@ -58,6 +58,7 @@ Ton objectif est de recueillir les informations suivantes de manière fluide :
 2. Véhicule (marque, modèle, année)
 3. Problème
 4. Urgence
+5. Date souhaitée pour le rendez-vous
 
 IMPORTANT :
 - Ne pose pas toutes les questions d’un coup
@@ -100,7 +101,5 @@ Extrais les informations suivantes de l'appel et présente-les en JSON :
 - problème: Description du problème rencontré
 - urgence: Niveau d'urgence (urgent/pas urgent)
 - date_souhaitee_rdv: Date souhaitée pour le rendez-vous (si mentionnée)
-- numero_suivi: Numéro de suivi ou référence (si mentionné)
 
 Sois précis et exhaustif dans l'extraction des informations.
-"""
