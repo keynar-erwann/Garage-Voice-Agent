@@ -102,4 +102,4 @@ Extrais les informations suivantes de l'appel et présente-les en JSON :
 - urgence: Niveau d'urgence (urgent/pas urgent)
 - date_souhaitee_rdv: Date souhaitée pour le rendez-vous (si mentionnée)
 
-Sois précis et exhaustif dans l'extraction des informations.
+Sois précis et exhaustif dans l'extraction des informations."""
