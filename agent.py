@@ -1,9 +1,5 @@
 # INFORMATION IMPORTANTE : L'AGENT NE DEMANDERA PAS LE NUMERO DE l'APPELANT
 # EN EFFET, IL (l'AGENT PEUT DIRECTEMENT SAVOI QUI APPEL)
-
-
-
-
 import os
 import datetime
 import logging
@@ -16,12 +12,14 @@ from livekit.agents import (
     AgentServer,
     AgentSession,
     Agent,
+    JobContext,
     room_io,
     RunContext,
     function_tool,
     ChatContext,
     ChatMessage,
     ConversationItemAddedEvent,
+    SessionUsageUpdatedEvent
 )
 from livekit.plugins import openai, noise_cancellation, gladia, ai_coustics
 from livekit.plugins.openai import realtime
@@ -31,11 +29,9 @@ from google.genai import types
 from pydantic import BaseModel
 from typing import Optional
 
-
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("garage-agent")
-
 
 class ClientInfo(BaseModel):
     prenom: str
@@ -45,7 +41,6 @@ class ClientInfo(BaseModel):
     urgence: str
     date_souhaitee_rdv: Optional[str] = None
     numero_suivi: Optional[str] = None
-
 
 def call_summary(transcription_file: str = "transcription.txt", phone_number: str = "Non spécifié") -> str:
     client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
@@ -73,22 +68,17 @@ def call_summary(transcription_file: str = "transcription.txt", phone_number: st
     )
     return formatted_message
 
-
 def Alex() -> Agent:
     return Agent(instructions=SYSTEM_PROMPT)
 
 server = AgentServer()
 
-
 @server.rtc_session(agent_name="alex_garage")
 async def garage_agent(ctx: agents.JobContext):
     gladia_key = os.environ.get("GLADIA_API_KEY")
     phone_number = "unknown"
-    
-    
     with open("transcription.txt", "w", encoding="utf-8") as f:
         f.write("")
-
     session = AgentSession(
         stt=gladia.STT(api_key=gladia_key, languages=["fr", "en"]),
         llm=openai.realtime.RealtimeModel(
@@ -146,8 +136,8 @@ async def garage_agent(ctx: agents.JobContext):
         except Exception as e:
             logger.error(f"Erreur lors de l'envoi du résumé: {e}")
     ctx.add_shutdown_callback(send_summary)
-
     await session.start(
+        record=True,
         room=ctx.room,
         agent=Alex(),
         room_options=room_io.RoomOptions(
