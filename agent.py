@@ -151,7 +151,7 @@ async def garage_agent(ctx: agents.JobContext):
     await session.generate_reply(
         instructions=(
             f"Salue le client en disant exactement : '{GREETINGS.strip()}'. "
-            "Enchaîne immédiatement en demandant son nom et son prénom pour commencer le diagnostic."
+            
         )
     )
 if __name__ == "__main__":
