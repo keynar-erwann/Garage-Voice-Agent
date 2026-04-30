@@ -9,6 +9,7 @@ from openai.types.beta.realtime.session import TurnDetection
 from twilio.rest import Client
 from livekit import agents, rtc, api
 from livekit.agents import (
+    mcp,
     AgentServer,
     AgentSession,
     Agent,
@@ -18,9 +19,7 @@ from livekit.agents import (
     function_tool,
     ChatContext,
     ChatMessage,
-    ConversationItemAddedEvent,
-    SessionUsageUpdatedEvent
-)
+    ConversationItemAddedEvent)
 from livekit.plugins import openai, noise_cancellation, gladia, ai_coustics
 from livekit.plugins.openai import realtime
 from system_prompt import SYSTEM_PROMPT, GREETINGS, SUMMARY
@@ -28,6 +27,7 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel
 from typing import Optional
+import json
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -68,21 +68,121 @@ def call_summary(transcription_file: str = "transcription.txt", phone_number: st
     )
     return formatted_message
 
-def Alex() -> Agent:
-    return Agent(instructions=SYSTEM_PROMPT)
+
+zapier_token = os.environ.get("ZAPIER_TOKEN")
+zapier_url = f"https://mcp.zapier.com/api/v1/connect?token={zapier_token}"
+
+zapier_mcp = mcp.MCPServerHTTP(
+    url=zapier_url,
+    transport_type="streamable_http",
+    timeout = 120.0,
+    client_session_timeout_seconds=120.0)
+
+
+calendar_tool = mcp.MCPToolset(id="zapier",mcp_server=zapier_mcp)
+
+
+def load_tarifs():
+    tarifs_path = os.path.join(os.path.dirname(__file__), "tarifs.json")
+    with open(tarifs_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+@function_tool
+def get_tarif_service(categorie: str, service_nom: str = None) -> str:
+    """
+    Récupère les tarifs des services du garage.
+    
+    Args:
+        categorie: Catégorie du service (ex: "vidange", "suspension", "freins", "pneus", "services_protection")
+                   Ou "tous" pour avoir tous les tarifs
+                   Ou "info" pour avoir les informations générales du garage
+        service_nom: (Optionnel) Nom spécifique du service dans la catégorie
+    
+    Returns:
+        Les informations de tarification en français
+    """
+    logger.info("Using calendar_tool... ")
+    try:
+        tarifs = load_tarifs()
+        
+        if categorie == "info":
+            return (
+                f"Garage : {tarifs['garage_info']['nom']}\n"
+                f"Adresse : {tarifs['garage_info']['adresse']}\n"
+                f"Téléphone : {tarifs['garage_info']['telephone']}\n\n"
+                f"Main d'œuvre : {tarifs['main_doeuvre']['tarif_horaire']}\n"
+                f"Garantie pièce : {tarifs['main_doeuvre']['garantie_piece']}\n"
+                f"Si pièce externe : {tarifs['main_doeuvre']['piece_externe']}"
+            )
+        
+        if categorie == "tous":
+            result = []
+            for cat, services in tarifs["services"].items():
+                cat_name = cat.replace("_", " ").title()
+                result.append(f"\n--- {cat_name} ---")
+                for service in services:
+                    result.append(
+                        f"- {service['nom']} : {service['prix']} ({service['duree']})"
+                    )
+            return "\n".join(result)
+        
+        if categorie not in tarifs["services"]:
+            return (
+                f"Catégorie '{categorie}' non trouvée. "
+                f"Catégories disponibles : vidange, suspension, freins, pneus, services_protection"
+            )
+        
+        services = tarifs["services"][categorie]
+        
+        if service_nom:
+            for service in services:
+                if service_nom.lower() in service["nom"].lower():
+                    return (
+                        f"Service : {service['nom']}\n"
+                        f"Prix : {service['prix']}\n"
+                        f"Durée : {service['duree']}"
+                    )
+            return f"Service '{service_nom}' non trouvé dans la catégorie '{categorie}'."
+        
+        result = [f"--- {categorie.replace('_', ' ').title()} ---"]
+        for service in services:
+            result.append(
+                f"- {service['nom']} : {service['prix']} ({service['duree']})"
+            )
+        return "\n".join(result)
+        
+    except Exception as e:
+        return f"Erreur lors de la récupération des tarifs : {str(e)}"
+
+
+
+def Alex(phone_number : str):
+    dynamic_instructions = (
+        f"{SYSTEM_PROMPT}\n\n"
+        f"### CONFIGURATION TECHNIQUE (CRITIQUE)\n"
+        f"- ID CALENDRIER DU GARAGE : 'garageroadr@gmail.com'\n"
+        f"- CONSIGNE CALENDRIER : Pour CHAQUE opération (recherche ou création), utilise TOUJOURS 'garageroadr@gmail.com' comme 'calendarid'. Ne demande JAMAIS l'email du client.\n"
+        f"- FORMAT TITRE : Le champ 'summary' de l'événement doit être : 'NomClient {phone_number}'.\n"
+        f"- LANGUE DESCRIPTION : La 'description' de l'événement DOIT être rédigée en français et inclure les détails du véhicule (ex: 'Réparation de la Ferrari 1960').\n"
+        f"- VALEURS STRICTES ZAPIER : Lors de la création d'événement, tu DOIS régler 'transparency' sur 'opaque' et 'visibility' sur 'private'.\n"
+        f"- OBLIGATION ZAPIER : Tu DOIS fournir l'argument 'instructions' (en anglais) pour chaque appel d'outil Zapier, sinon ça échouera."
+    )
+    return Agent(instructions=dynamic_instructions,tools=[calendar_tool,get_tarif_service])
 
 server = AgentServer()
 
 @server.rtc_session(agent_name="alex_garage")
 async def garage_agent(ctx: agents.JobContext):
     gladia_key = os.environ.get("GLADIA_API_KEY")
-    phone_number = "unknown"
+    phone_number = "Inconnu"
+   
     with open("transcription.txt", "w", encoding="utf-8") as f:
         f.write("")
     session = AgentSession(
-        stt=gladia.STT(api_key=gladia_key, languages=["fr", "en"]),
+        stt=gladia.STT(api_key=gladia_key, languages=["fr", "en", "es"]),
         llm=openai.realtime.RealtimeModel(
-            model="gpt-realtime-mini-2025-12-15",
+            model="gpt-realtime-1.5",
             voice="coral",
             turn_detection=TurnDetection(
                 type="semantic_vad",
@@ -139,7 +239,7 @@ async def garage_agent(ctx: agents.JobContext):
     await session.start(
         record=True,
         room=ctx.room,
-        agent=Alex(),
+        agent=Alex(phone_number),
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(
                 noise_cancellation=ai_coustics.audio_enhancement(
