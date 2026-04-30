@@ -28,6 +28,7 @@ from google.genai import types
 from pydantic import BaseModel
 from typing import Optional
 import json
+from livekit.agents import BackgroundAudioPlayer, AudioConfig, BuiltinAudioClip
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -192,6 +193,7 @@ async def garage_agent(ctx: agents.JobContext):
         ),
     )
 
+    
     @session.on("conversation_item_added")
     def transcription(transcript: ConversationItemAddedEvent):
         if not isinstance(transcript.item, ChatMessage):
@@ -248,6 +250,17 @@ async def garage_agent(ctx: agents.JobContext):
             ),
         ),
     )
+
+    background_audio = BackgroundAudioPlayer(
+    ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.8),
+    thinking_sound=[
+        AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.8),
+        AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING2, volume=0.7),
+    ],
+)
+    await background_audio.start(room=ctx.room, agent_session=session)
+
+
     await session.generate_reply(
         instructions=(
             f"Salue le client en disant exactement : '{GREETINGS.strip()}'. "
