@@ -255,7 +255,7 @@ async def garage_agent(ctx: agents.JobContext):
     ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.8),
     thinking_sound=[
         AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.8),
-        AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING2, volume=0.7),
+       
     ],
 )
     await background_audio.start(room=ctx.room, agent_session=session)
