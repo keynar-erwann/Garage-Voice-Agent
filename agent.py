@@ -29,8 +29,10 @@ from pydantic import BaseModel
 from typing import Optional
 import json
 from livekit.agents import BackgroundAudioPlayer, AudioConfig, BuiltinAudioClip
+from mem0 import AsyncMemoryClient
 
 load_dotenv()
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("garage-agent")
 
@@ -42,6 +44,9 @@ class ClientInfo(BaseModel):
     urgence: str
     date_souhaitee_rdv: Optional[str] = None
     numero_suivi: Optional[str] = None
+
+alex_memory = AsyncMemoryClient(api_key=os.environ.get("MEM0_API_KEY"))
+
 
 def call_summary(transcription_file: str = "transcription.txt", phone_number: str = "Non spécifié") -> str:
     client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
@@ -157,19 +162,33 @@ def get_tarif_service(categorie: str, service_nom: str = None) -> str:
         return f"Erreur lors de la récupération des tarifs : {str(e)}"
 
 
+class Alex(Agent):
+    def __init__(self, phone_number: str):
+        self.phone_number = phone_number
+        dynamic_instructions = (
+            f"{SYSTEM_PROMPT}\n\n"
+            f"### CONFIGURATION TECHNIQUE (CRITIQUE)\n"
+            f"- ID CALENDRIER DU GARAGE : 'garageroadr@gmail.com'\n"
+            f"- CONSIGNE CALENDRIER : Pour CHAQUE opération (recherche ou création), utilise TOUJOURS 'garageroadr@gmail.com' comme 'calendarid'. Ne demande JAMAIS l'email du client.\n"
+            f"- FORMAT TITRE : Le champ 'summary' de l'événement doit être : 'NomClient {phone_number}'.\n"
+            f"- LANGUE DESCRIPTION : La 'description' de l'événement DOIT être rédigée en français et inclure les détails du véhicule (ex: 'Réparation de la Ferrari 1960').\n"
+            f"- VALEURS STRICTES ZAPIER : Lors de la création d'événement, tu DOIS régler 'transparency' sur 'opaque' et 'visibility' sur 'private'.\n"
+            f"- OBLIGATION ZAPIER : Tu DOIS fournir l'argument 'instructions' (en anglais) pour chaque appel d'outil Zapier, sinon ça échouera."
+        )
+        super().__init__(instructions=dynamic_instructions, tools=[calendar_tool, get_tarif_service])
 
-def Alex(phone_number : str):
-    dynamic_instructions = (
-        f"{SYSTEM_PROMPT}\n\n"
-        f"### CONFIGURATION TECHNIQUE (CRITIQUE)\n"
-        f"- ID CALENDRIER DU GARAGE : 'garageroadr@gmail.com'\n"
-        f"- CONSIGNE CALENDRIER : Pour CHAQUE opération (recherche ou création), utilise TOUJOURS 'garageroadr@gmail.com' comme 'calendarid'. Ne demande JAMAIS l'email du client.\n"
-        f"- FORMAT TITRE : Le champ 'summary' de l'événement doit être : 'NomClient {phone_number}'.\n"
-        f"- LANGUE DESCRIPTION : La 'description' de l'événement DOIT être rédigée en français et inclure les détails du véhicule (ex: 'Réparation de la Ferrari 1960').\n"
-        f"- VALEURS STRICTES ZAPIER : Lors de la création d'événement, tu DOIS régler 'transparency' sur 'opaque' et 'visibility' sur 'private'.\n"
-        f"- OBLIGATION ZAPIER : Tu DOIS fournir l'argument 'instructions' (en anglais) pour chaque appel d'outil Zapier, sinon ça échouera."
-    )
-    return Agent(instructions=dynamic_instructions,tools=[calendar_tool,get_tarif_service])
+    async def on_user_turn_completed(self, turn_ctx: ChatContext, new_message: ChatMessage) -> None:
+        await alex_memory.add(new_message.text_content, user_id=self.phone_number)
+        memories = await alex_memory.search(new_message.text_content, user_id=self.phone_number)
+
+        if memories:
+            memory_text = "\n".join([m['memory'] for m in memories])
+            turn_ctx.add_message(
+                role="system", 
+                content=f"Rappel de tes souvenirs sur ce client : {memory_text}"
+            )
+            await self.update_chat_ctx(turn_ctx)
+
 
 server = AgentServer()
 
@@ -252,19 +271,16 @@ async def garage_agent(ctx: agents.JobContext):
     )
 
     background_audio = BackgroundAudioPlayer(
-    ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.8),
-    thinking_sound=[
-        AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.8),
-       
-    ],
-)
+        ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.8),
+        thinking_sound=[
+            AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.8),
+        ],
+    )
     await background_audio.start(room=ctx.room, agent_session=session)
-
 
     await session.generate_reply(
         instructions=(
             f"Salue le client en disant exactement : '{GREETINGS.strip()}'. "
-            
         )
     )
 if __name__ == "__main__":
