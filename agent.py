@@ -46,7 +46,8 @@ class ClientInfo(BaseModel):
     date_souhaitee_rdv: Optional[str] = None
     numero_suivi: Optional[str] = None
 
-alex_memory = AsyncMemoryClient(api_key=os.environ.get("MEM0_API_KEY"))
+
+alex_memory = AsyncMemoryClient(api_key="m0-mdKpSdc485RP7ukLF6C2UZbpet8SKR04b8ijVqoe")
 
 
 def call_summary(transcription_file: str = "transcription.txt", phone_number: str = "Non spécifié") -> str:
