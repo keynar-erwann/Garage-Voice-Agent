@@ -96,7 +96,7 @@ def load_tarifs():
 
 
 @function_tool
-def get_tarif_service(categorie: str, service_nom: str = None,context: RunContext) -> str:
+def get_tarif_service(context: RunContext,categorie: str, service_nom: str = None) -> str:
     """
     Récupère les tarifs des services du garage.
     
