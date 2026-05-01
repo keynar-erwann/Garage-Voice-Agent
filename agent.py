@@ -9,6 +9,7 @@ from openai.types.beta.realtime.session import TurnDetection
 from twilio.rest import Client
 from livekit import agents, rtc, api
 from livekit.agents import (
+    RunContext,
     mcp,
     AgentServer,
     AgentSession,
@@ -95,7 +96,7 @@ def load_tarifs():
 
 
 @function_tool
-def get_tarif_service(categorie: str, service_nom: str = None) -> str:
+def get_tarif_service(categorie: str, service_nom: str = None,context: RunContext) -> str:
     """
     Récupère les tarifs des services du garage.
     
@@ -108,6 +109,7 @@ def get_tarif_service(categorie: str, service_nom: str = None) -> str:
     Returns:
         Les informations de tarification en français
     """
+    context.disallow_interruptions()
     logger.info("Using calendar_tool... ")
     try:
         tarifs = load_tarifs()
