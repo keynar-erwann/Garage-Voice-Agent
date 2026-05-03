@@ -10,6 +10,7 @@ from twilio.rest import Client
 from livekit import agents, rtc, api
 from livekit.agents import (
     RunContext,
+    UserStateChangedEvent,
     mcp,
     AgentServer,
     AgentSession,
@@ -20,7 +21,8 @@ from livekit.agents import (
     function_tool,
     ChatContext,
     ChatMessage,
-    ConversationItemAddedEvent)
+    ConversationItemAddedEvent,
+    get_job_context)
 from livekit.plugins import openai, noise_cancellation, gladia, ai_coustics
 from livekit.plugins.openai import realtime
 from system_prompt import SYSTEM_PROMPT, GREETINGS, SUMMARY
@@ -50,6 +52,17 @@ class ClientInfo(BaseModel):
 
 alex_memory = AsyncMemoryClient(api_key="m0-mdKpSdc485RP7ukLF6C2UZbpet8SKR04b8ijVqoe")
 
+async def hangup_call():
+    ctx = get_job_context()
+    if ctx is None:
+        
+        return
+    
+    await ctx.api.room.delete_room(
+        api.DeleteRoomRequest(
+            room=ctx.room.name,
+        )
+    )
 
 def call_summary(transcription_file: str = "transcription.txt", phone_number: str = "Non spécifié") -> str:
     client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
@@ -96,6 +109,12 @@ def load_tarifs():
     with open(tarifs_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+# @function_tool
+# async def end_call(self, ctx: RunContext):
+#         """Utilises ce tool lorsque le problème de l'utilisateur a été réglé"""
+#         await ctx.wait_for_playout() 
+
+#         await hangup_call()
 
 @function_tool
 def get_tarif_service(context: RunContext,categorie: str, service_nom: str = None) -> str:
@@ -168,8 +187,7 @@ def get_tarif_service(context: RunContext,categorie: str, service_nom: str = Non
 
 class Alex(Agent):
     def __init__(self, phone_number: str):
-        end_call = EndCallTool(extra_description="Only end the call after confirming the customer's issue is resolved.",
-        delete_room=True,end_instructions="Thank the customer for calling and wish them a good day.")
+        
         self.phone_number = phone_number
         dynamic_instructions = (
             f"{SYSTEM_PROMPT}\n\n"
@@ -181,7 +199,7 @@ class Alex(Agent):
             f"- VALEURS STRICTES ZAPIER : Lors de la création d'événement, tu DOIS régler 'transparency' sur 'opaque' et 'visibility' sur 'private'.\n"
             f"- OBLIGATION ZAPIER : Tu DOIS fournir l'argument 'instructions' (en anglais) pour chaque appel d'outil Zapier, sinon ça échouera."
         )
-        super().__init__(instructions=dynamic_instructions, tools=[calendar_tool, get_tarif_service,end_call.tools])
+        super().__init__(instructions=dynamic_instructions, tools=[calendar_tool, get_tarif_service])
 
     async def on_user_turn_completed(self, turn_ctx: ChatContext, new_message: ChatMessage) -> None:
         await alex_memory.add(new_message.text_content, user_id=self.phone_number)
@@ -206,6 +224,7 @@ async def garage_agent(ctx: agents.JobContext):
     with open("transcription.txt", "w", encoding="utf-8") as f:
         f.write("")
     session = AgentSession(
+        user_away_timeout=10.0,
         stt=gladia.STT(api_key=gladia_key, languages=["fr", "en", "es"]),
         llm=openai.realtime.RealtimeModel(
             model="gpt-realtime-1.5",
@@ -218,6 +237,10 @@ async def garage_agent(ctx: agents.JobContext):
         ),
     )
 
+    @session.on("user_state_changed")
+    def end_call(user_presence : UserStateChangedEvent) : 
+        if user_presence.new_state == "away":
+            hangup_call()
     
     @session.on("conversation_item_added")
     def transcription(transcript: ConversationItemAddedEvent):
