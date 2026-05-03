@@ -31,6 +31,7 @@ from typing import Optional
 import json
 from livekit.agents import BackgroundAudioPlayer, AudioConfig, BuiltinAudioClip
 from mem0 import AsyncMemoryClient
+from livekit.agents.beta.tools import EndCallTool
 
 load_dotenv()
 
@@ -167,6 +168,8 @@ def get_tarif_service(context: RunContext,categorie: str, service_nom: str = Non
 
 class Alex(Agent):
     def __init__(self, phone_number: str):
+        end_call = EndCallTool(extra_description="Only end the call after confirming the customer's issue is resolved.",
+        delete_room=True,end_instructions="Thank the customer for calling and wish them a good day.")
         self.phone_number = phone_number
         dynamic_instructions = (
             f"{SYSTEM_PROMPT}\n\n"
@@ -178,7 +181,7 @@ class Alex(Agent):
             f"- VALEURS STRICTES ZAPIER : Lors de la création d'événement, tu DOIS régler 'transparency' sur 'opaque' et 'visibility' sur 'private'.\n"
             f"- OBLIGATION ZAPIER : Tu DOIS fournir l'argument 'instructions' (en anglais) pour chaque appel d'outil Zapier, sinon ça échouera."
         )
-        super().__init__(instructions=dynamic_instructions, tools=[calendar_tool, get_tarif_service])
+        super().__init__(instructions=dynamic_instructions, tools=[calendar_tool, get_tarif_service,end_call.tools])
 
     async def on_user_turn_completed(self, turn_ctx: ChatContext, new_message: ChatMessage) -> None:
         await alex_memory.add(new_message.text_content, user_id=self.phone_number)
