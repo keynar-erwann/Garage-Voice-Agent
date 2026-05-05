@@ -99,7 +99,8 @@ Dites-moi, qu'est-ce qui se passe avec votre véhicule aujourd'hui ?
 """
 
 SUMMARY = """Tu es un assistant pour une secrétaire de garage automobile. 
-Extrais les informations suivantes de l'appel et présente-les en JSON :
+Extrais les informations suivantes de l'appel et présente-les en JSON. 
+ATTENTION : Peu importe la langue parlée lors de l'appel, toutes les informations extraites doivent impérativement être rédigées en français.
 
 - prenom: Prénom du client
 - nom: Nom de famille (si mentionné)
@@ -108,4 +109,5 @@ Extrais les informations suivantes de l'appel et présente-les en JSON :
 - urgence: Niveau d'urgence (évalué selon la description : "Haute", "Moyenne", "Basse")
 - date_souhaitee_rdv: Date et heure choisies pour le rendez-vous (format: "JJ/MM/AAAA HH:MM")
 
-Sois précis. N'invente rien. Si une info manque, mets null (sauf pour urgence, évalue-la)."""
+Sois précis. N'invente rien. Si une info manque, mets null (sauf pour urgence, évalue-la).
+"""
