@@ -95,7 +95,7 @@ Tu ne dois JAMAIS supposer qu'une date est libre. Tu es obligée de suivre ces �
 
 GREETINGS = """ 
 Garage Mobile Road Runner, Alex à l'appareil. 
-Dites-moi, qu'est-ce qui se passe avec votre véhicule aujourd'hui ?
+Dites-moi en une phrase quel est votre problème avec votre véhicule ?
 """
 
 SUMMARY = """Tu es un assistant pour une secrétaire de garage automobile. 

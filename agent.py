@@ -9,6 +9,7 @@ from openai.types.beta.realtime.session import TurnDetection
 from twilio.rest import Client
 from livekit import agents, rtc, api
 from livekit.agents import (
+    TurnHandlingOptions,
     RunContext,
     UserStateChangedEvent,
     mcp,
@@ -24,6 +25,7 @@ from livekit.agents import (
     ConversationItemAddedEvent,
     get_job_context)
 from livekit.plugins import openai, noise_cancellation, gladia, ai_coustics
+from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from livekit.plugins.openai import realtime
 from system_prompt import SYSTEM_PROMPT, GREETINGS, SUMMARY
 from google import genai
@@ -224,7 +226,13 @@ async def garage_agent(ctx: agents.JobContext):
     with open("transcription.txt", "w", encoding="utf-8") as f:
         f.write("")
     session = AgentSession(
-        user_away_timeout=10.0,
+        turn_handling=TurnHandlingOptions(
+        turn_detection=MultilingualModel(),
+        interruption={
+            "mode": "adaptive",
+        },
+    ),
+        user_away_timeout=5.0,
         stt=gladia.STT(api_key=gladia_key, languages=["fr", "en", "es"]),
         llm=openai.realtime.RealtimeModel(
             model="gpt-realtime-1.5",
@@ -309,7 +317,7 @@ async def garage_agent(ctx: agents.JobContext):
 
     await session.generate_reply(
         instructions=(
-            f"Salue le client en disant exactement : '{GREETINGS.strip()}'. "
+            f"Salue TOUJOURS client en disant exactement : '{GREETINGS.strip()}'. "
         )
     )
 if __name__ == "__main__":
