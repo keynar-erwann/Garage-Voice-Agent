@@ -246,9 +246,10 @@ async def garage_agent(ctx: agents.JobContext):
     )
 
     @session.on("user_state_changed")
-    def end_call(user_presence : UserStateChangedEvent) : 
+    async def end_call(user_presence : UserStateChangedEvent) : 
         if user_presence.new_state == "away":
-            hangup_call()
+            import asyncio
+            asyncio.create_task(hangup_call())
     
     @session.on("conversation_item_added")
     def transcription(transcript: ConversationItemAddedEvent):
