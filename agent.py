@@ -1,5 +1,6 @@
 # INFORMATION IMPORTANTE : L'AGENT NE DEMANDERA PAS LE NUMERO DE l'APPELANT
 # EN EFFET, IL (l'AGENT PEUT DIRECTEMENT SAVOI QUI APPEL)
+import asyncio
 import os
 import datetime
 import logging
@@ -248,8 +249,9 @@ async def garage_agent(ctx: agents.JobContext):
     @session.on("user_state_changed")
     async def end_call(user_presence : UserStateChangedEvent) : 
         if user_presence.new_state == "away":
-            import asyncio
             asyncio.create_task(hangup_call())
+           
+            
     
     @session.on("conversation_item_added")
     def transcription(transcript: ConversationItemAddedEvent):
