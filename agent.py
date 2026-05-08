@@ -101,12 +101,7 @@ zapier_mcp = mcp.MCPServerHTTP(
     url=zapier_url,
     transport_type="streamable_http",
     timeout = 120.0,
-    client_session_timeout_seconds=120.0,
-    allowed_tools=[
-        "google_calendar_find_busy_periods_in_calendar",
-        "google_calendar_find_events",
-        "google_calendar_create_detailed_event"
-    ]
+    client_session_timeout_seconds=120.0
 )
 
 
@@ -201,8 +196,9 @@ class Alex(Agent):
         current_date = datetime.datetime.now().strftime("%A %d %B %Y")
         dynamic_instructions = (
             f"{SYSTEM_PROMPT}\n\n"
-            f"### CONTEXTE TEMPOREL (TRÈS IMPORTANT)\n"
+            f"### CONTEXTE TEMPOREL ET FUSEAU HORAIRE (TRÈS IMPORTANT)\n"
             f"- DATE D'AUJOURD'HUI : {current_date}\n"
+            f"- FUSEAU HORAIRE : Le garage est situé à Gatineau, au Canada (Heure de l'Est).\n"
             f"- Tu dois TOUJOURS utiliser cette date comme point de repère pour le calendrier.\n"
             f"- N'invente JAMAIS d'année (nous sommes en {datetime.datetime.now().year}).\n"
             f"- Si le client dit 'jeudi', il s'agit du PROCHAIN jeudi à partir d'aujourd'hui, ne choisis JAMAIS une date dans le passé (comme 2024).\n\n"
@@ -212,7 +208,7 @@ class Alex(Agent):
             f"- FORMAT TITRE : Le champ 'summary' de l'événement doit être : 'NomClient {phone_number}'.\n"
             f"- LANGUE DESCRIPTION : La 'description' de l'événement DOIT être rédigée en français et inclure les détails du véhicule (ex: 'Réparation de la Ferrari 1960').\n"
             f"- VALEURS STRICTES ZAPIER : Lors de la création d'événement, tu DOIS régler 'transparency' sur 'opaque' et 'visibility' sur 'private'.\n"
-            f"- OBLIGATION ZAPIER : Tu DOIS fournir l'argument 'instructions' (en anglais) pour chaque appel d'outil Zapier, sinon ça échouera."
+            f"- OBLIGATION ZAPIER ET HEURE EXACTE : Tu DOIS fournir l'argument 'instructions' (en anglais) pour Zapier. DANS CES INSTRUCTIONS, précise TOUJOURS le fuseau horaire de Gatineau (ex: 'at 13:00 EDT' ou 'at 13:00 EST'). Si tu ne mets pas 'EDT' ou 'EST', Zapier décalera l'heure !"
         )
         super().__init__(instructions=dynamic_instructions, tools=[calendar_tool, get_tarif_service])
 
