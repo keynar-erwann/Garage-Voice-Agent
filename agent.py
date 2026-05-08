@@ -101,7 +101,13 @@ zapier_mcp = mcp.MCPServerHTTP(
     url=zapier_url,
     transport_type="streamable_http",
     timeout = 120.0,
-    client_session_timeout_seconds=120.0)
+    client_session_timeout_seconds=120.0,
+    allowed_tools=[
+        "google_calendar_find_busy_periods_in_calendar",
+        "google_calendar_find_events",
+        "google_calendar_create_detailed_event"
+    ]
+)
 
 
 calendar_tool = mcp.MCPToolset(id="zapier",mcp_server=zapier_mcp)
