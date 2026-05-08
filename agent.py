@@ -25,7 +25,7 @@ from livekit.agents import (
     ChatMessage,
     ConversationItemAddedEvent,
     get_job_context)
-from livekit.plugins import openai, noise_cancellation, gladia, ai_coustics
+from livekit.plugins import openai, noise_cancellation, gladia, ai_coustics,xai
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from livekit.plugins.openai import realtime
 from system_prompt import SYSTEM_PROMPT, GREETINGS, SUMMARY
@@ -134,7 +134,7 @@ def get_tarif_service(context: RunContext,categorie: str, service_nom: str = Non
         Les informations de tarification en français
     """
     context.disallow_interruptions()
-    logger.info("Using calendar_tool... ")
+    
     try:
         tarifs = load_tarifs()
         
@@ -192,8 +192,14 @@ class Alex(Agent):
     def __init__(self, phone_number: str):
         
         self.phone_number = phone_number
+        current_date = datetime.datetime.now().strftime("%A %d %B %Y")
         dynamic_instructions = (
             f"{SYSTEM_PROMPT}\n\n"
+            f"### CONTEXTE TEMPOREL (TRÈS IMPORTANT)\n"
+            f"- DATE D'AUJOURD'HUI : {current_date}\n"
+            f"- Tu dois TOUJOURS utiliser cette date comme point de repère pour le calendrier.\n"
+            f"- N'invente JAMAIS d'année (nous sommes en {datetime.datetime.now().year}).\n"
+            f"- Si le client dit 'jeudi', il s'agit du PROCHAIN jeudi à partir d'aujourd'hui, ne choisis JAMAIS une date dans le passé (comme 2024).\n\n"
             f"### CONFIGURATION TECHNIQUE (CRITIQUE)\n"
             f"- ID CALENDRIER DU GARAGE : 'garageroadr@gmail.com'\n"
             f"- CONSIGNE CALENDRIER : Pour CHAQUE opération (recherche ou création), utilise TOUJOURS 'garageroadr@gmail.com' comme 'calendarid'. Ne demande JAMAIS l'email du client.\n"
@@ -233,10 +239,19 @@ async def garage_agent(ctx: agents.JobContext):
             "mode": "adaptive",
         },
     ),
-        user_away_timeout=5.0,
+        user_away_timeout=15.0,
         stt=gladia.STT(api_key=gladia_key, languages=["fr", "en", "es"]),
+        # llm= xai.realtime.RealtimeModel(
+        #     voice = "Ara",
+        #      turn_detection=TurnDetection(
+        #         type="server_vad",
+        #         eagerness="auto",
+        #         interrupt_response=True,
+        #     ),
+
+        # )
         llm=openai.realtime.RealtimeModel(
-            model="gpt-realtime-1.5",
+            model="gpt-realtime-2",
             voice="coral",
             turn_detection=TurnDetection(
                 type="semantic_vad",
@@ -247,7 +262,7 @@ async def garage_agent(ctx: agents.JobContext):
     )
 
     @session.on("user_state_changed")
-    async def end_call(user_presence : UserStateChangedEvent) : 
+    def end_call(user_presence : UserStateChangedEvent) : 
         if user_presence.new_state == "away":
             asyncio.create_task(hangup_call())
            
@@ -296,7 +311,7 @@ async def garage_agent(ctx: agents.JobContext):
                 logger.warning("Fichier transcription.txt non trouvé")
         except Exception as e:
             logger.error(f"Erreur lors de l'envoi du résumé: {e}")
-    ctx.add_shutdown_callback(send_summary)
+    # ctx.add_shutdown_callback(send_summary)
     await session.start(
         record=True,
         room=ctx.room,
