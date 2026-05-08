@@ -251,7 +251,7 @@ async def garage_agent(ctx: agents.JobContext):
 
         # )
         llm=openai.realtime.RealtimeModel(
-            model="gpt-realtime-2",
+            model="gpt-realtime-1.5",
             voice="coral",
             turn_detection=TurnDetection(
                 type="semantic_vad",
@@ -311,7 +311,7 @@ async def garage_agent(ctx: agents.JobContext):
                 logger.warning("Fichier transcription.txt non trouvé")
         except Exception as e:
             logger.error(f"Erreur lors de l'envoi du résumé: {e}")
-    # ctx.add_shutdown_callback(send_summary)
+    ctx.add_shutdown_callback(send_summary)
     await session.start(
         record=True,
         room=ctx.room,
