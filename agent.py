@@ -143,7 +143,8 @@ def get_tarif_service(context: RunContext,categorie: str, service_nom: str = Non
             return (
                 f"Garage : {tarifs['garage_info']['nom']}\n"
                 f"Adresse : {tarifs['garage_info']['adresse']}\n"
-                f"Téléphone : {tarifs['garage_info']['telephone']}\n\n"
+                f"Téléphone : {tarifs['garage_info']['telephone']}\n"
+                f"Horaires : {tarifs['garage_info']['horaires']}\n\n"
                 f"Main d'œuvre : {tarifs['main_doeuvre']['tarif_horaire']}\n"
                 f"Garantie pièce : {tarifs['main_doeuvre']['garantie_piece']}\n"
                 f"Si pièce externe : {tarifs['main_doeuvre']['piece_externe']}"
