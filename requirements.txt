@@ -1,4 +1,4 @@
-livekit-agents[openai,cartesia,silero,groq,elevenlabs,assemblyai,google,turn-detector,deepgram,speechmatics,hume,gladia,xai,mcp,turn-detector]
+livekit-agents[openai,cartesia,silero,groq,elevenlabs,assemblyai,google,turn-detector,deepgram,speechmatics,hume,gladia,xai,mcp,turn-detector,ultravox,phonic]~=1.5.8
 livekit-plugins-openai
 livekit-plugins-noise-cancellation
 python-dotenv
@@ -10,3 +10,5 @@ requests
 livekit-plugins-ai-coustics
 google-genai
 composio
+pytest 
+pytest-asyncio

@@ -25,7 +25,7 @@ from livekit.agents import (
     ChatMessage,
     ConversationItemAddedEvent,
     get_job_context)
-from livekit.plugins import openai, noise_cancellation, gladia, ai_coustics,xai
+from livekit.plugins import openai, noise_cancellation, gladia, ai_coustics,phonic
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from livekit.plugins.openai import realtime
 from system_prompt import SYSTEM_PROMPT, GREETINGS, SUMMARY
@@ -113,12 +113,7 @@ def load_tarifs():
     with open(tarifs_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-# @function_tool
-# async def end_call(self, ctx: RunContext):
-#         """Utilises ce tool lorsque le problème de l'utilisateur a été réglé"""
-#         await ctx.wait_for_playout() 
 
-#         await hangup_call()
 
 @function_tool
 def get_tarif_service(context: RunContext,categorie: str, service_nom: str = None) -> str:
@@ -244,24 +239,17 @@ async def garage_agent(ctx: agents.JobContext):
     ),
         user_away_timeout=15.0,
         stt=gladia.STT(api_key=gladia_key, languages=["fr", "en", "es"]),
-        # llm= xai.realtime.RealtimeModel(
-        #     voice = "Ara",
-        #      turn_detection=TurnDetection(
-        #         type="server_vad",
+        llm=phonic.realtime.RealtimeModel(voice="sabrina",default_language="fr")
+       
+        # llm=openai.realtime.RealtimeModel(
+        #     model="gpt-realtime-1.5",
+        #     voice="coral",
+        #     turn_detection=TurnDetection(
+        #         type="semantic_vad",
         #         eagerness="auto",
         #         interrupt_response=True,
         #     ),
-
-        # )
-        llm=openai.realtime.RealtimeModel(
-            model="gpt-realtime-1.5",
-            voice="coral",
-            turn_detection=TurnDetection(
-                type="semantic_vad",
-                eagerness="auto",
-                interrupt_response=True,
-            ),
-        ),
+        # ),
     )
 
     @session.on("user_state_changed")
