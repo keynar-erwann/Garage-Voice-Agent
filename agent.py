@@ -25,7 +25,7 @@ from livekit.agents import (
     ChatMessage,
     ConversationItemAddedEvent,
     get_job_context)
-from livekit.plugins import openai, noise_cancellation, gladia, ai_coustics,phonic
+from livekit.plugins import openai, noise_cancellation, gladia, ai_coustics,ultravox
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from livekit.plugins.openai import realtime
 from system_prompt import SYSTEM_PROMPT, GREETINGS, SUMMARY
@@ -105,8 +105,7 @@ zapier_mcp = mcp.MCPServerHTTP(
 )
 
 
-calendar_tool = mcp.MCPToolset(id="zapier",mcp_server=zapier_mcp)
-
+calendar_tool = mcp.MCPToolset(id="zapier", mcp_server=zapier_mcp)
 
 def load_tarifs():
     tarifs_path = os.path.join(os.path.dirname(__file__), "tarifs.json")
@@ -223,6 +222,8 @@ class Alex(Agent):
 
 server = AgentServer()
 
+
+
 @server.rtc_session(agent_name="alex_garage")
 async def garage_agent(ctx: agents.JobContext):
     gladia_key = os.environ.get("GLADIA_API_KEY")
@@ -236,20 +237,21 @@ async def garage_agent(ctx: agents.JobContext):
         interruption={
             "mode": "adaptive",
         },
-    ),
+        ),
         user_away_timeout=15.0,
         stt=gladia.STT(api_key=gladia_key, languages=["fr", "en", "es"]),
-        llm=phonic.realtime.RealtimeModel(voice="sabrina",default_language="fr")
+        
+      
        
-        # llm=openai.realtime.RealtimeModel(
-        #     model="gpt-realtime-1.5",
-        #     voice="coral",
-        #     turn_detection=TurnDetection(
-        #         type="semantic_vad",
-        #         eagerness="auto",
-        #         interrupt_response=True,
-        #     ),
-        # ),
+        llm=openai.realtime.RealtimeModel(
+            model="gpt-realtime-mini",
+            voice="coral",
+            turn_detection=TurnDetection(
+                type="semantic_vad",
+                eagerness="auto",
+                interrupt_response=True,
+            ),
+        ),
     )
 
     @session.on("user_state_changed")
@@ -302,7 +304,7 @@ async def garage_agent(ctx: agents.JobContext):
                 logger.warning("Fichier transcription.txt non trouvé")
         except Exception as e:
             logger.error(f"Erreur lors de l'envoi du résumé: {e}")
-    ctx.add_shutdown_callback(send_summary)
+    #ctx.add_shutdown_callback(send_summary)
     await session.start(
         record=True,
         room=ctx.room,
