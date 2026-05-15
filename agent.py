@@ -233,7 +233,7 @@ async def garage_agent(ctx: agents.JobContext):
         f.write("")
     session = AgentSession(
         turn_handling=TurnHandlingOptions(
-        turn_detection=MultilingualModel(),
+        turn_detection="realtime_llm",
         interruption={
             "mode": "adaptive",
         },
@@ -318,7 +318,15 @@ async def garage_agent(ctx: agents.JobContext):
         ),
     )
 
-    background_audio = BackgroundAudioPlayer(
+   
+
+    await session.generate_reply(
+        instructions=(
+            f"Salue TOUJOURS client en disant exactement : '{GREETINGS.strip()}'. "
+        )
+    )
+
+     background_audio = BackgroundAudioPlayer(
         ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.9),
         thinking_sound=[
             AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.9),
@@ -326,10 +334,6 @@ async def garage_agent(ctx: agents.JobContext):
     )
     await background_audio.start(room=ctx.room, agent_session=session)
 
-    await session.generate_reply(
-        instructions=(
-            f"Salue TOUJOURS client en disant exactement : '{GREETINGS.strip()}'. "
-        )
-    )
+
 if __name__ == "__main__":
     agents.cli.run_app(server)
