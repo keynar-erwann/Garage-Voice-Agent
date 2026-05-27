@@ -200,6 +200,7 @@ async def garage_agent(ctx: agents.JobContext):
       
        
         llm=realtime.RealtimeModel(
+        tool_choice="required",
         model="gpt-realtime-1.5",
         modalities=["TEXT"],
         turn_detection=TurnDetection(
