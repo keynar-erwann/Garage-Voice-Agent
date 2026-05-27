@@ -10,3 +10,4 @@ torch
 python-dotenv
 pytest
 pytest-asyncio
+browser-use

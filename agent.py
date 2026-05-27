@@ -7,9 +7,9 @@ import logging
 from dotenv import load_dotenv
 from openai import OpenAI
 from openai.types.beta.realtime.session import TurnDetection
-from twilio.rest import Client
 from livekit import agents, rtc, api
 from livekit.agents import (
+    JobProcess,
     TurnHandlingOptions,
     RunContext,
     UserStateChangedEvent,
@@ -25,7 +25,7 @@ from livekit.agents import (
     ChatMessage,
     ConversationItemAddedEvent,
     get_job_context)
-from livekit.plugins import openai, noise_cancellation, gladia, ai_coustics,ultravox
+from livekit.plugins import openai, noise_cancellation, gladia, ai_coustics,cartesia,google
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from livekit.plugins.openai import realtime
 from system_prompt import SYSTEM_PROMPT, GREETINGS, SUMMARY
@@ -34,14 +34,20 @@ from google.genai import types
 from pydantic import BaseModel
 from typing import Optional
 import json
-from livekit.agents import BackgroundAudioPlayer, AudioConfig, BuiltinAudioClip
-from mem0 import AsyncMemoryClient
-from livekit.agents.beta.tools import EndCallTool
+import smtplib
+from email.message import EmailMessage
+from livekit.agents import BackgroundAudioPlayer, AudioConfig, BuiltinAudioClip,inference
+from livekit.agents.llm import ImageContent
+import base64
 
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("garage-agent")
+
+with open("tarifs.jpg", "rb") as f:
+    tarifs = f"data:image/jpeg;base64,{base64.b64encode(f.read()).decode('utf-8')}"
+
 
 class ClientInfo(BaseModel):
     prenom: str
@@ -52,8 +58,22 @@ class ClientInfo(BaseModel):
     date_souhaitee_rdv: Optional[str] = None
     numero_suivi: Optional[str] = None
 
+def send_email(message: str) -> str:
+    email = EmailMessage()
+    email["From"] = os.environ.get("SENDER_MAIL")
+    email["To"] = os.environ.get("RECEIVER_MAIL")
+    email["Subject"] = "Résumé d'appel - Garage Alex"
+    email.set_content(message)
+    smtp_server = os.environ.get("SMTP_SERVER")
+    port = os.environ.get("PORT")
+    password = os.environ.get("PASSWORD")
+    username = os.environ.get("SENDER_MAIL")
+    with smtplib.SMTP(smtp_server, port) as server:
+        server.starttls()
+        server.login(username, password)
+        server.send_message(email)
+        return "Email Sent !"
 
-alex_memory = AsyncMemoryClient(api_key="m0-mdKpSdc485RP7ukLF6C2UZbpet8SKR04b8ijVqoe")
 
 async def hangup_call():
     ctx = get_job_context()
@@ -98,6 +118,7 @@ zapier_token = os.environ.get("ZAPIER_TOKEN")
 zapier_url = f"https://mcp.zapier.com/api/v1/connect?token={zapier_token}"
 
 zapier_mcp = mcp.MCPServerHTTP(
+    allowed_tools=["execute_zapier_write_action","execute_zapier_read_action","list_enabled_zapier_actions"],
     url=zapier_url,
     transport_type="streamable_http",
     timeout = 120.0,
@@ -107,151 +128,89 @@ zapier_mcp = mcp.MCPServerHTTP(
 
 calendar_tool = mcp.MCPToolset(id="zapier", mcp_server=zapier_mcp)
 
-def load_tarifs():
-    tarifs_path = os.path.join(os.path.dirname(__file__), "tarifs.json")
-    with open(tarifs_path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-
-@function_tool
-def get_tarif_service(context: RunContext,categorie: str, service_nom: str = None) -> str:
-    """
-    Récupère les tarifs des services du garage.
-    
-    Args:
-        categorie: Catégorie du service (ex: "vidange", "suspension", "freins", "pneus", "services_protection")
-                   Ou "tous" pour avoir tous les tarifs
-                   Ou "info" pour avoir les informations générales du garage
-        service_nom: (Optionnel) Nom spécifique du service dans la catégorie
-    
-    Returns:
-        Les informations de tarification en français
-    """
-    context.disallow_interruptions()
-    
-    try:
-        tarifs = load_tarifs()
-        
-        if categorie == "info":
-            return (
-                f"Garage : {tarifs['garage_info']['nom']}\n"
-                f"Adresse : {tarifs['garage_info']['adresse']}\n"
-                f"Téléphone : {tarifs['garage_info']['telephone']}\n"
-                f"Horaires : {tarifs['garage_info']['horaires']}\n\n"
-                f"Main d'œuvre : {tarifs['main_doeuvre']['tarif_horaire']}\n"
-                f"Garantie pièce : {tarifs['main_doeuvre']['garantie_piece']}\n"
-                f"Si pièce externe : {tarifs['main_doeuvre']['piece_externe']}"
-            )
-        
-        if categorie == "tous":
-            result = []
-            for cat, services in tarifs["services"].items():
-                cat_name = cat.replace("_", " ").title()
-                result.append(f"\n--- {cat_name} ---")
-                for service in services:
-                    result.append(
-                        f"- {service['nom']} : {service['prix']} ({service['duree']})"
-                    )
-            return "\n".join(result)
-        
-        if categorie not in tarifs["services"]:
-            return (
-                f"Catégorie '{categorie}' non trouvée. "
-                f"Catégories disponibles : vidange, suspension, freins, pneus, services_protection"
-            )
-        
-        services = tarifs["services"][categorie]
-        
-        if service_nom:
-            for service in services:
-                if service_nom.lower() in service["nom"].lower():
-                    return (
-                        f"Service : {service['nom']}\n"
-                        f"Prix : {service['prix']}\n"
-                        f"Durée : {service['duree']}"
-                    )
-            return f"Service '{service_nom}' non trouvé dans la catégorie '{categorie}'."
-        
-        result = [f"--- {categorie.replace('_', ' ').title()} ---"]
-        for service in services:
-            result.append(
-                f"- {service['nom']} : {service['prix']} ({service['duree']})"
-            )
-        return "\n".join(result)
-        
-    except Exception as e:
-        return f"Erreur lors de la récupération des tarifs : {str(e)}"
-
 
 class Alex(Agent):
-    def __init__(self, phone_number: str):
+    def __init__(self, phone_number: str, *, chat_ctx: Optional[ChatContext] = None):
         
         self.phone_number = phone_number
         current_date = datetime.datetime.now().strftime("%A %d %B %Y")
         dynamic_instructions = (
             f"{SYSTEM_PROMPT}\n\n"
-            f"### CONTEXTE TEMPOREL ET FUSEAU HORAIRE (TRÈS IMPORTANT)\n"
+            f"### INFORMATIONS TEMPORELLES (OBLIGATOIRE)\n"
             f"- DATE D'AUJOURD'HUI : {current_date}\n"
-            f"- FUSEAU HORAIRE : Le garage est situé à Gatineau, au Canada (Heure de l'Est).\n"
-            f"- Tu dois TOUJOURS utiliser cette date comme point de repère pour le calendrier.\n"
-            f"- N'invente JAMAIS d'année (nous sommes en {datetime.datetime.now().year}).\n"
-            f"- Si le client dit 'jeudi', il s'agit du PROCHAIN jeudi à partir d'aujourd'hui, ne choisis JAMAIS une date dans le passé (comme 2024).\n\n"
-            f"### CONFIGURATION TECHNIQUE (CRITIQUE)\n"
-            f"- ID CALENDRIER DU GARAGE : 'garageroadr@gmail.com'\n"
-            f"- CONSIGNE CALENDRIER : Pour CHAQUE opération (recherche ou création), utilise TOUJOURS 'garageroadr@gmail.com' comme 'calendarid'. Ne demande JAMAIS l'email du client.\n"
-            f"- FORMAT TITRE : Le champ 'summary' de l'événement doit être : 'NomClient {phone_number}'.\n"
-            f"- LANGUE DESCRIPTION : La 'description' de l'événement DOIT être rédigée en français et inclure les détails du véhicule (ex: 'Réparation de la Ferrari 1960').\n"
-            f"- VALEURS STRICTES ZAPIER : Lors de la création d'événement, tu DOIS régler 'transparency' sur 'opaque' et 'visibility' sur 'private'.\n"
-            f"- OBLIGATION ZAPIER ET HEURE EXACTE : Tu DOIS fournir l'argument 'instructions' (en anglais) pour Zapier. DANS CES INSTRUCTIONS, précise TOUJOURS le fuseau horaire de Gatineau (ex: 'at 13:00 EDT' ou 'at 13:00 EST'). Si tu ne mets pas 'EDT' ou 'EST', Zapier décalera l'heure !"
+            f"- FUSEAU HORAIRE : Gatineau, Canada (Eastern Time).\n"
+            f"- HEURES D'OUVERTURE : 8h45 à 16h00, du lundi au vendredi.\n"
+            f"- Tu es en {datetime.datetime.now().year}. Ne propose jamais de dates passées.\n\n"
+            f"### UTILISATION DU CALENDRIER ZAPIER (RÈGLES TECHNIQUES)\n"
+            f"- ID CALENDRIER : 'garageroadr@gmail.com' (à utiliser pour 'calendarid' si demandé).\n"
+            f"- DÉCOUVERTE (OBLIGATOIRE) : Avant toute lecture/écriture Google Calendar, appelle `list_enabled_zapier_actions` (app: 'Google Calendar').\n"
+            f"- PARAMÈTRES (OBLIGATOIRE) : Avant un appel `execute_zapier_read_action`/`execute_zapier_write_action`, récupère les paramètres attendus en rappelant `list_enabled_zapier_actions` avec la key de l'action visée (ex: `find_busy_periods`, `event_v2`, `detailed_event`). Utilise ensuite exactement ces noms de champs.\n"
+            f"- VÉRIFICATION DES DISPONIBILITÉS : Utilise `execute_zapier_read_action` avec l'action `find_busy_periods`.\n"
+            f"  - instructions (ANGLAIS) : 'Find available slots between 8:45 AM and 4:00 PM EST for the next 7 days.'\n"
+            f"- CRÉATION DE RENDEZ-VOUS (OBLIGATOIRE) : Utilise `execute_zapier_write_action` avec l'action `detailed_event` si disponible.\n"
+            f"- HEURES (OBLIGATOIRE) : Ne laisse jamais Zapier/deviner des horaires. Passe toujours un début + une fin (ou une durée) avec des datetimes explicites en fuseau horaire de Gatineau.\n"
+            f"- DURÉE (OBLIGATOIRE) : Par défaut, un rendez-vous = 60 minutes (diagnostic). N'utilise 30 minutes QUE si le client le demande explicitement ou si une durée précise est confirmée.\n"
+            f"- CONFLITS (OBLIGATOIRE) : Avant de créer, relance `find_busy_periods` sur la fenêtre exacte du rendez-vous pour vérifier l'absence de conflit.\n"
+            f"- RÈGLE ANTI-DOUBLONS (OBLIGATOIRE) : Ne dis jamais 'je ne peux pas empêcher les doublons'. Tu gères les doublons en vérifiant les conflits avec `find_busy_periods`. Si tu ne peux pas vérifier (erreur outil / action manquante), tu n'essaies pas de créer et tu dis qu'un humain rappellera.\n"
+            f"- INTERDIT (OBLIGATOIRE) : Ne demande jamais au client de vérifier lui-même son calendrier.\n"
+            f"- VÉRIFICATION POST-CRÉATION (OBLIGATOIRE) : Après création, vérifie que l'événement existe vraiment en lecture (priorité: `event_by_id` si un ID est retourné, sinon `event_v2` sur la fenêtre horaire). Tu ne dis jamais 'c'est confirmé' tant que cette vérification ne renvoie pas l'événement.\n"
+            f"- FOLLOW-UP (OBLIGATOIRE) : Si un outil renvoie `followUpQuestion`, tu DOIS poser la question au client et attendre sa réponse. Ne confirme rien avant d'avoir un succès final.\n"
+            f"- EN CAS D'ÉCHEC : Si Zapier répond 'Action not found' et fournit `availableActions`, choisis une action depuis cette liste (priorité: `find_busy_periods`, puis `event_v2`, puis `detailed_event`) et retente une seule fois.\n"
+            f"- INTERDICTION : Ne mets jamais un champ `output` dans les paramètres envoyés à Zapier.\n"
+            f"  - summary: 'NomClient {phone_number}'\n"
+            f"  - description: Détails du véhicule en français (ex: 'Toyota Civic 2016 - Pneu crevé')\n"
+            f"  - transparency: 'opaque'\n"
+            f"  - visibility: 'private'\n"
+            f"  - instructions (ANGLAIS) : 'Create event at [Heure] Gatineau time (EST/EDT). Ensure no double booking.'\n\n"
+            f"### ACTION IMMÉDIATE (CRITIQUE)\n"
+            f"Dès que tu annonces 'Je regarde le calendrier' ou 'Un instant', tu DOIS générer l'appel d'outil IMMÉDIATEMENT dans le même tour. N'attends pas de réponse de l'utilisateur après avoir dit que tu vas chercher."
         )
-        super().__init__(instructions=dynamic_instructions, tools=[calendar_tool, get_tarif_service])
-
-    async def on_user_turn_completed(self, turn_ctx: ChatContext, new_message: ChatMessage) -> None:
-        await alex_memory.add(new_message.text_content, user_id=self.phone_number)
-        memories = await alex_memory.search(new_message.text_content, user_id=self.phone_number)
-
-        if memories:
-            memory_text = "\n".join([m['memory'] for m in memories])
-            turn_ctx.add_message(
-                role="system", 
-                content=f"Rappel de tes souvenirs sur ce client : {memory_text}"
-            )
-            await self.update_chat_ctx(turn_ctx)
+        super().__init__(instructions=dynamic_instructions, tools=[calendar_tool], chat_ctx=chat_ctx)
 
 
 server = AgentServer()
 
-
-
 @server.rtc_session(agent_name="alex_garage")
 async def garage_agent(ctx: agents.JobContext):
-    gladia_key = os.environ.get("GLADIA_API_KEY")
+
+    garage_context = ChatContext()
+    garage_context.add_message(
+        role = "user",content=["Voici une image des tarifs du garage",ImageContent(image=tarifs)]
+    )
+    
     phone_number = "Inconnu"
    
     with open("transcription.txt", "w", encoding="utf-8") as f:
         f.write("")
     session = AgentSession(
-        turn_handling=TurnHandlingOptions(
-        turn_detection="realtime_llm",
-        interruption={
-            "mode": "adaptive",
-        },
-        ),
+        
+
+
+      
+        
+    
         user_away_timeout=15.0,
-        stt=gladia.STT(api_key=gladia_key, languages=["fr", "en", "es"]),
+        tts=inference.TTS(
+            model="cartesia/sonic-3",
+            language="fr",
+            voice=os.environ.get("VOICE_ID")
+        ),
+     
         
       
        
-        llm=openai.realtime.RealtimeModel(
-            model="gpt-realtime-mini",
-            voice="coral",
-            turn_detection=TurnDetection(
-                type="semantic_vad",
-                eagerness="auto",
-                interrupt_response=True,
-            ),
+        llm=realtime.RealtimeModel(
+        model="gpt-realtime-1.5",
+        modalities=["TEXT"],
+        turn_detection=TurnDetection(
+            type="server_vad",
+            threshold=0.7,
+            prefix_padding_ms=300,
+            silence_duration_ms=400,
+            create_response=True,
+            interrupt_response=False
         ),
+    )
     )
 
     @session.on("user_state_changed")
@@ -288,27 +247,18 @@ async def garage_agent(ctx: agents.JobContext):
         try:
             if os.path.exists("transcription.txt"):
                 summary_message = call_summary("transcription.txt", phone_number)
-                account_sid = os.environ.get("ACCOUNT_SID")
-                auth_token = os.environ.get("AUTH_TOKEN")
-                if account_sid and auth_token:
-                    twilio_client = Client(account_sid, auth_token)
-                    twilio_client.messages.create(
-                        body=summary_message,
-                        from_=os.environ.get("SENDER_PHONE_NUMBER"),
-                        to=os.environ.get("RECEIVER_PHONE_NUMBER")
-                    )
-                    logger.info("Résumé envoyé avec succès")
-                else:
-                    logger.error("Variables d'environnement Twilio manquantes")
+                result = send_email(summary_message)
+                logger.info(f"Résumé envoyé par email : {result}")
             else:
                 logger.warning("Fichier transcription.txt non trouvé")
         except Exception as e:
-            logger.error(f"Erreur lors de l'envoi du résumé: {e}")
-    #ctx.add_shutdown_callback(send_summary)
+            logger.error(f"Erreur lors de l'envoi du résumé par email: {e}")
+    
+    ctx.add_shutdown_callback(send_summary)
     await session.start(
         record=True,
         room=ctx.room,
-        agent=Alex(phone_number),
+        agent=Alex(phone_number,chat_ctx=garage_context),
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(
                 noise_cancellation=ai_coustics.audio_enhancement(
@@ -320,13 +270,9 @@ async def garage_agent(ctx: agents.JobContext):
 
    
 
-    await session.generate_reply(
-        instructions=(
-            f"Salue TOUJOURS client en disant exactement : '{GREETINGS.strip()}'. "
-        )
-    )
+    await session.say(text=GREETINGS.strip())
 
-     background_audio = BackgroundAudioPlayer(
+    background_audio = BackgroundAudioPlayer(
         ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.9),
         thinking_sound=[
             AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.9),
