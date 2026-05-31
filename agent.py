@@ -158,7 +158,7 @@ class Alex(Agent):
 
 server = AgentServer()
 
-@server.rtc_session(agent_name="alex_meta")
+@server.rtc_session(agent_name="alex_garage")
 async def garage_agent(ctx: agents.JobContext):
 
     garage_context = ChatContext()
