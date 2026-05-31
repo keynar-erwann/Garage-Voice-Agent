@@ -1,13 +1,12 @@
-
 livekit-agents[openai,cartesia,silero,groq,elevenlabs,assemblyai,google,deepgram,speechmatics,hume,gladia,xai,mcp,ultravox,phonic,turn-detector]
 livekit-plugins-noise-cancellation
 livekit-plugins-ai-coustics
 twilio
 requests
-mem0ai
 google-genai
 torch
 python-dotenv
 pytest
 pytest-asyncio
-browser-use
+dateparser
+tzdata

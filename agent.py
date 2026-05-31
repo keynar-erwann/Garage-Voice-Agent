@@ -3,12 +3,14 @@
 import asyncio
 import os
 import datetime
+from zoneinfo import ZoneInfo
 import logging
 from dotenv import load_dotenv
 from openai import OpenAI
 from openai.types.beta.realtime.session import TurnDetection
 from livekit import agents, rtc, api
 from livekit.agents import (
+    text_transforms,
     JobProcess,
     TurnHandlingOptions,
     RunContext,
@@ -25,7 +27,7 @@ from livekit.agents import (
     ChatMessage,
     ConversationItemAddedEvent,
     get_job_context)
-from livekit.plugins import openai, noise_cancellation, gladia, ai_coustics,cartesia,google
+from livekit.plugins import openai, noise_cancellation, ai_coustics
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from livekit.plugins.openai import realtime
 from system_prompt import SYSTEM_PROMPT, GREETINGS, SUMMARY
@@ -37,16 +39,16 @@ import json
 import smtplib
 from email.message import EmailMessage
 from livekit.agents import BackgroundAudioPlayer, AudioConfig, BuiltinAudioClip,inference
-from livekit.agents.llm import ImageContent
-import base64
+
+
 
 load_dotenv()
+
+current_date = datetime.datetime.now(ZoneInfo("America/Toronto")).strftime("%A %d %B %Y")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("garage-agent")
 
-with open("tarifs.jpg", "rb") as f:
-    tarifs = f"data:image/jpeg;base64,{base64.b64encode(f.read()).decode('utf-8')}"
 
 
 class ClientInfo(BaseModel):
@@ -117,109 +119,95 @@ def call_summary(transcription_file: str = "transcription.txt", phone_number: st
 zapier_token = os.environ.get("ZAPIER_TOKEN")
 zapier_url = f"https://mcp.zapier.com/api/v1/connect?token={zapier_token}"
 
+
+
+async def zapier_result_resolver(ctx: mcp.MCPToolResultContext) -> str:
+    """Renvoie le résultat brut de Zapier pour que l'IA puisse l'analyser (disponibilités, etc.)."""
+    if ctx.result and ctx.result.content:
+        return str(ctx.result.content)
+    return "L'outil a été appelé, mais le retour est vide ou invalide."
+
+
 zapier_mcp = mcp.MCPServerHTTP(
-    allowed_tools=["execute_zapier_write_action","execute_zapier_read_action","list_enabled_zapier_actions"],
+    tool_result_resolver=zapier_result_resolver,
     url=zapier_url,
     transport_type="streamable_http",
     timeout = 120.0,
     client_session_timeout_seconds=120.0
 )
 
-
-calendar_tool = mcp.MCPToolset(id="zapier", mcp_server=zapier_mcp)
+calendar_tool = mcp.MCPToolset(
+    id="zapier", 
+    mcp_server=zapier_mcp,
+)
 
 
 class Alex(Agent):
     def __init__(self, phone_number: str, *, chat_ctx: Optional[ChatContext] = None):
-        
+
+       
         self.phone_number = phone_number
-        current_date = datetime.datetime.now().strftime("%A %d %B %Y")
-        dynamic_instructions = (
-            f"{SYSTEM_PROMPT}\n\n"
-            f"### INFORMATIONS TEMPORELLES (OBLIGATOIRE)\n"
-            f"- DATE D'AUJOURD'HUI : {current_date}\n"
-            f"- FUSEAU HORAIRE : Gatineau, Canada (Eastern Time).\n"
-            f"- HEURES D'OUVERTURE : 8h45 à 16h00, du lundi au vendredi.\n"
-            f"- Tu es en {datetime.datetime.now().year}. Ne propose jamais de dates passées.\n\n"
-            f"### UTILISATION DU CALENDRIER ZAPIER (RÈGLES TECHNIQUES)\n"
-            f"- ID CALENDRIER : 'garageroadr@gmail.com' (à utiliser pour 'calendarid' si demandé).\n"
-            f"- DÉCOUVERTE (OBLIGATOIRE) : Avant toute lecture/écriture Google Calendar, appelle `list_enabled_zapier_actions` (app: 'Google Calendar').\n"
-            f"- PARAMÈTRES (OBLIGATOIRE) : Avant un appel `execute_zapier_read_action`/`execute_zapier_write_action`, récupère les paramètres attendus en rappelant `list_enabled_zapier_actions` avec la key de l'action visée (ex: `find_busy_periods`, `event_v2`, `detailed_event`). Utilise ensuite exactement ces noms de champs.\n"
-            f"- VÉRIFICATION DES DISPONIBILITÉS : Utilise `execute_zapier_read_action` avec l'action `find_busy_periods`.\n"
-            f"  - instructions (ANGLAIS) : 'Find available slots between 8:45 AM and 4:00 PM EST for the next 7 days.'\n"
-            f"- CRÉATION DE RENDEZ-VOUS (OBLIGATOIRE) : Utilise `execute_zapier_write_action` avec l'action `detailed_event` si disponible.\n"
-            f"- HEURES (OBLIGATOIRE) : Ne laisse jamais Zapier/deviner des horaires. Passe toujours un début + une fin (ou une durée) avec des datetimes explicites en fuseau horaire de Gatineau.\n"
-            f"- DURÉE (OBLIGATOIRE) : Par défaut, un rendez-vous = 60 minutes (diagnostic). N'utilise 30 minutes QUE si le client le demande explicitement ou si une durée précise est confirmée.\n"
-            f"- CONFLITS (OBLIGATOIRE) : Avant de créer, relance `find_busy_periods` sur la fenêtre exacte du rendez-vous pour vérifier l'absence de conflit.\n"
-            f"- RÈGLE ANTI-DOUBLONS (OBLIGATOIRE) : Ne dis jamais 'je ne peux pas empêcher les doublons'. Tu gères les doublons en vérifiant les conflits avec `find_busy_periods`. Si tu ne peux pas vérifier (erreur outil / action manquante), tu n'essaies pas de créer et tu dis qu'un humain rappellera.\n"
-            f"- INTERDIT (OBLIGATOIRE) : Ne demande jamais au client de vérifier lui-même son calendrier.\n"
-            f"- VÉRIFICATION POST-CRÉATION (OBLIGATOIRE) : Après création, vérifie que l'événement existe vraiment en lecture (priorité: `event_by_id` si un ID est retourné, sinon `event_v2` sur la fenêtre horaire). Tu ne dis jamais 'c'est confirmé' tant que cette vérification ne renvoie pas l'événement.\n"
-            f"- FOLLOW-UP (OBLIGATOIRE) : Si un outil renvoie `followUpQuestion`, tu DOIS poser la question au client et attendre sa réponse. Ne confirme rien avant d'avoir un succès final.\n"
-            f"- EN CAS D'ÉCHEC : Si Zapier répond 'Action not found' et fournit `availableActions`, choisis une action depuis cette liste (priorité: `find_busy_periods`, puis `event_v2`, puis `detailed_event`) et retente une seule fois.\n"
-            f"- INTERDICTION : Ne mets jamais un champ `output` dans les paramètres envoyés à Zapier.\n"
-            f"  - summary: 'NomClient {phone_number}'\n"
-            f"  - description: Détails du véhicule en français (ex: 'Toyota Civic 2016 - Pneu crevé')\n"
-            f"  - transparency: 'opaque'\n"
-            f"  - visibility: 'private'\n"
-            f"  - instructions (ANGLAIS) : 'Create event at [Heure] Gatineau time (EST/EDT). Ensure no double booking.'\n\n"
-            f"### ACTION IMMÉDIATE (CRITIQUE)\n"
-            f"Dès que tu annonces 'Je regarde le calendrier' ou 'Un instant', tu DOIS générer l'appel d'outil IMMÉDIATEMENT dans le même tour. N'attends pas de réponse de l'utilisateur après avoir dit que tu vas chercher."
+        
+        formatted_prompt = SYSTEM_PROMPT.format(
+            phone_number=phone_number
         )
-        super().__init__(instructions=dynamic_instructions, tools=[calendar_tool], chat_ctx=chat_ctx)
+
+        super().__init__(instructions=formatted_prompt, tools=[calendar_tool], chat_ctx=chat_ctx)
+
 
 
 server = AgentServer()
 
-@server.rtc_session(agent_name="alex_garage")
+@server.rtc_session(agent_name="alex_meta")
 async def garage_agent(ctx: agents.JobContext):
 
     garage_context = ChatContext()
-    garage_context.add_message(
-        role = "user",content=["Voici une image des tarifs du garage",ImageContent(image=tarifs)]
-    )
     
-    phone_number = "Inconnu"
+    garage_context.add_message(role="system",content=f"La date d'aujourd'hui est la suivante : {current_date}")
+    
+    phone_number = " Numéro de téléphone inconnu"
    
     with open("transcription.txt", "w", encoding="utf-8") as f:
         f.write("")
     session = AgentSession(
         
-
-
-      
-        
-    
-        user_away_timeout=15.0,
+        user_away_timeout=5.0,
         tts=inference.TTS(
             model="cartesia/sonic-3",
             language="fr",
             voice=os.environ.get("VOICE_ID")
         ),
-     
-        
-      
-       
         llm=realtime.RealtimeModel(
-        tool_choice="required",
-        model="gpt-realtime-1.5",
-        modalities=["TEXT"],
-        turn_detection=TurnDetection(
-            type="server_vad",
-            threshold=0.7,
-            prefix_padding_ms=300,
-            silence_duration_ms=400,
-            create_response=True,
-            interrupt_response=False
+            temperature=0.6,
+            tool_choice="auto",
+            model="gpt-realtime-1.5",
+            modalities=["TEXT"],
+            turn_detection=TurnDetection(
+                type="server_vad",
+                threshold=0.7,
+                prefix_padding_ms=300,
+                silence_duration_ms=400,
+                create_response=True,
+                interrupt_response=False,
+            ),
         ),
     )
-    )
+        
+     
+       
+   
 
     @session.on("user_state_changed")
     def end_call(user_presence : UserStateChangedEvent) : 
         if user_presence.new_state == "away":
+            session.generate_reply(instructions="L'appelant est inactif, demandes lui poliment si il est présent")
             asyncio.create_task(hangup_call())
            
-            
+    @session.on("error")
+    def on_session_error(e):
+        logger.error(f"Erreur de session (non-fatale) : {e}")
+           
+    
     
     @session.on("conversation_item_added")
     def transcription(transcript: ConversationItemAddedEvent):
@@ -256,6 +244,7 @@ async def garage_agent(ctx: agents.JobContext):
             logger.error(f"Erreur lors de l'envoi du résumé par email: {e}")
     
     ctx.add_shutdown_callback(send_summary)
+
     await session.start(
         record=True,
         room=ctx.room,
