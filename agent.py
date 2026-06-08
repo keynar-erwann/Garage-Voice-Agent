@@ -10,41 +10,42 @@ from openai import OpenAI
 from openai.types.beta.realtime.session import TurnDetection
 from livekit import agents, rtc, api
 from livekit.agents import (
-    text_transforms,
-    JobProcess,
-    TurnHandlingOptions,
-    RunContext,
-    UserStateChangedEvent,
-    mcp,
+    Agent,
     AgentServer,
     AgentSession,
-    Agent,
-    JobContext,
-    room_io,
-    RunContext,
-    function_tool,
     ChatContext,
     ChatMessage,
     ConversationItemAddedEvent,
-    get_job_context)
+    JobContext,
+    JobProcess,
+    RunContext,
+    SessionUsageUpdatedEvent,
+    TurnHandlingOptions,
+    UserStateChangedEvent,
+    function_tool,
+    get_job_context,
+    mcp,
+    room_io,
+    text_transforms,
+)
 from livekit.plugins import openai, noise_cancellation, ai_coustics
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from livekit.plugins.openai import realtime
 from system_prompt import SYSTEM_PROMPT, GREETINGS, SUMMARY
-from google import genai
+from google import genai 
 from google.genai import types
 from pydantic import BaseModel
 from typing import Optional
 import json
 import smtplib
 from email.message import EmailMessage
-from livekit.agents import BackgroundAudioPlayer, AudioConfig, BuiltinAudioClip,inference
+from livekit.agents import BackgroundAudioPlayer, AudioConfig, BuiltinAudioClip, inference
+
 
 
 
 load_dotenv()
 
-current_date = datetime.datetime.now(ZoneInfo("America/Toronto")).strftime("%A %d %B %Y")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("garage-agent")
@@ -80,9 +81,8 @@ def send_email(message: str) -> str:
 async def hangup_call():
     ctx = get_job_context()
     if ctx is None:
-        
         return
-    
+
     await ctx.api.room.delete_room(
         api.DeleteRoomRequest(
             room=ctx.room.name,
@@ -122,9 +122,18 @@ zapier_url = f"https://mcp.zapier.com/api/v1/connect?token={zapier_token}"
 
 
 async def zapier_result_resolver(ctx: mcp.MCPToolResultContext) -> str:
-    """Renvoie le résultat brut de Zapier pour que l'IA puisse l'analyser (disponibilités, etc.)."""
+    """Renvoie le résultat textuel de Zapier pour que l'IA puisse l'analyser."""
     if ctx.result and ctx.result.content:
-        return str(ctx.result.content)
+        # Extraire le texte de chaque item de contenu (TextContent)
+        texts = []
+        for item in ctx.result.content:
+            if hasattr(item, "text"):
+                texts.append(item.text)
+            elif isinstance(item, dict) and "text" in item:
+                texts.append(item["text"])
+            else:
+                texts.append(str(item))
+        return "\n".join(texts)
     return "L'outil a été appelé, mais le retour est vide ou invalide."
 
 
@@ -132,27 +141,27 @@ zapier_mcp = mcp.MCPServerHTTP(
     tool_result_resolver=zapier_result_resolver,
     url=zapier_url,
     transport_type="streamable_http",
-    timeout = 120.0,
-    client_session_timeout_seconds=120.0
+    timeout=120.0,
+    client_session_timeout_seconds=120.0,
 )
 
 calendar_tool = mcp.MCPToolset(
-    id="zapier", 
+    id="zapier",
     mcp_server=zapier_mcp,
 )
 
 
 class Alex(Agent):
     def __init__(self, phone_number: str, *, chat_ctx: Optional[ChatContext] = None):
-
-       
         self.phone_number = phone_number
-        
-        formatted_prompt = SYSTEM_PROMPT.format(
-            phone_number=phone_number
-        )
 
-        super().__init__(instructions=formatted_prompt, tools=[calendar_tool], chat_ctx=chat_ctx)
+        formatted_prompt = SYSTEM_PROMPT.format(phone_number=phone_number)
+
+        super().__init__(
+            instructions=formatted_prompt,
+            tools=[calendar_tool],
+            chat_ctx=chat_ctx,
+        )
 
 
 
@@ -161,17 +170,19 @@ server = AgentServer()
 @server.rtc_session(agent_name="alex_garage")
 async def garage_agent(ctx: agents.JobContext):
 
-    garage_context = ChatContext()
-    
-    garage_context.add_message(role="system",content=f"La date d'aujourd'hui est la suivante : {current_date}")
-    
-    phone_number = " Numéro de téléphone inconnu"
+
+
    
+
+   
+
+    phone_number = " Numéro de téléphone inconnu"
+
     with open("transcription.txt", "w", encoding="utf-8") as f:
         f.write("")
     session = AgentSession(
         
-        user_away_timeout=5.0,
+        user_away_timeout=10.0,
         tts=inference.TTS(
             model="cartesia/sonic-3",
             language="fr",
@@ -183,24 +194,73 @@ async def garage_agent(ctx: agents.JobContext):
             model="gpt-realtime-1.5",
             modalities=["TEXT"],
             turn_detection=TurnDetection(
-                type="server_vad",
-                threshold=0.7,
-                prefix_padding_ms=300,
-                silence_duration_ms=400,
+                type="semantic_vad",
+                eagerness="medium",
+                
                 create_response=True,
-                interrupt_response=False,
+                interrupt_response=True,
             ),
         ),
     )
+
+
+    def send_report(cost_report: str) -> str:
+        email = EmailMessage()
+        email["From"] = os.environ.get("SENDER_MAIL")
+        email["To"] = os.environ.get("RECEIVER_MAIL")
+        email["Subject"] = "Estimations des couts de Alex"
+        email.set_content(cost_report)
+
+        smtp_server = os.environ.get("SMTP_SERVER")
+        port = (os.environ.get("PORT"))
+        password = os.environ.get("PASSWORD")
+        username = os.environ.get("SENDER_MAIL")
+
+        with smtplib.SMTP(smtp_server, port) as server:
+            server.starttls()
+            server.login(username, password)
+            server.send_message(email)
+
+        return "Cost estimation report sent !"
+
         
+
+    
      
+
+    async def cost_estimation():
+        logger.info("Envoie du rapport...")
+        with open("rapport.txt") as file : 
+
+
+            for utilisation in session.usage.model_usage:
+                durée_en_secondes = utilisation.session_duration
+                durée_en_minutes = durée_en_secondes // 60
+
+                report = (
+                f"Fournisseur : {utilisation.provider}\n"
+                f" Modèle : {utilisation.model}\n"
+                f" Token d'entrés : {utilisation.input_tokens}\n"
+                f" Token de sortie : {utilisation.output_tokens} \n"
+                f" Estimation des minutes du LLM : {durée_en_minutes}\n"
+                )
+
+                cost_report = file.write(report)
+                send_report(cost_report)
+                logger.info("Rapport envoyé...")
+
+    
+    ctx.add_shutdown_callback(cost_estimation)
+    
+
+
        
    
 
     @session.on("user_state_changed")
     def end_call(user_presence : UserStateChangedEvent) : 
         if user_presence.new_state == "away":
-            session.generate_reply(instructions="L'appelant est inactif, demandes lui poliment si il est présent")
+            
             asyncio.create_task(hangup_call())
            
     @session.on("error")
@@ -231,6 +291,7 @@ async def garage_agent(ctx: agents.JobContext):
     if caller.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP:
         phone_number = caller.attributes.get("sip.phoneNumber", "unknown")
         logger.info(f"{phone_number} is calling...")
+
     async def send_summary():
         logger.info("Appel terminé. Génération du résumé...")
         try:
@@ -248,7 +309,7 @@ async def garage_agent(ctx: agents.JobContext):
     await session.start(
         record=True,
         room=ctx.room,
-        agent=Alex(phone_number,chat_ctx=garage_context),
+        agent=Alex(phone_number),
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(
                 noise_cancellation=ai_coustics.audio_enhancement(
